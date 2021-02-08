@@ -5,8 +5,9 @@ import torchvision
 from model import ViTVAE
 from torch_optimizer import AdaBelief
 from collections import defaultdict
-
 from logging import getLogger, basicConfig, INFO
+import matplotlib.pyplot as plt
+
 
 logger = getLogger(__name__)
 
@@ -34,6 +35,31 @@ def prepare(xs, device):
 def losses_append(total_losses, losses, length):
     for key, value in losses.items():
         total_losses[key] += value * length
+
+@torch.no_grad()
+def visualize(model, data, device, nrow=8):
+    print(data.size())
+    xs = prepare(data, device)
+    _, variables = model(xs)
+
+    rx = variables['rx'].loc # N, C, H, W
+    print(rx.size())
+
+    def _tile(rx):
+        N, C, H, W = rx.size()
+        rx = ((rx * 255.0/2.0) + 255.0/2.0).to(torch.uint8).cpu()
+        num_pad = (nrow - (N % nrow)) % nrow
+        if num_pad > 0:
+            rx = torch.cat([rx, rx.new_zeros(num_pad, C, H, W)], dim=0)
+
+        N, C, H, W = rx.size()
+        rx = rx.view(N//nrow, nrow, C, H, W).permute(0, 3, 1, 4, 2).reshape(N//nrow*H, nrow*W, C)
+        return rx.numpy()
+
+    rx = _tile(rx)
+    xs = _tile(xs)
+
+    return xs, rx
 
 def train(num_epochs=100, batch_size=32, dataset_size=None):
     basicConfig(level=INFO)
@@ -86,6 +112,14 @@ def train(num_epochs=100, batch_size=32, dataset_size=None):
 
             logger.info("validation epoch %s, %s", epoch, ", ".join(["{} = {}".format(key, value) for key, value in total_losses.items()]))
 
+    # Visualization
+    xs_train, rx_train = visualize(model, trainset[0:8*8], device)
+    xs_test, rx_test  = visualize(model, testset[0:8*8], device)
+
+    plt.imshow(rx_train)
+    plt.imshow(xs_train)
+    plt.imshow(rx_test)
+    plt.imshow(xs_test)
 
 if __name__ == '__main__':
     train(10, 2, 10)
