@@ -80,7 +80,7 @@ class ViTEncoder(nn.Module):
         p = self.patch_size
         N, C, H, W = img.size()
 
-        x = img.view(N, C, H//p, p, W//p, p).permute(2, 4, 0, 1, 3, 5).reshape(self.num_patches, N, self.patch_dim)
+        x = img.view(N, C, H//p, p, W//p, p).permute(2, 4, 0, 3, 5, 1).reshape(self.num_patches, N, self.patch_dim)
         x = self.patch_to_embedding(x)
 
         x = torch.cat([x, x.new_zeros(1, N, self.dim)], dim=0)
@@ -147,7 +147,7 @@ class ViTVAE(nn.Module):
 
         reconstruction_error = -rx.log_prob(x).mean()
         regularization_parameter = torch.distributions.kl.kl_divergence(prior, dist).mean()
-        loss = reconstruction_error + regularization_parameter
+        loss = reconstruction_error + alpha * regularization_parameter
 
         losses = dict()
         variables = dict()
