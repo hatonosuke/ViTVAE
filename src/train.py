@@ -62,7 +62,11 @@ def visualize(model, data, device, nrow=8):
 def train(num_epochs=100, batch_size=32, dataset_size=None):
     basicConfig(level=INFO)
 
-    device = torch.device("cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda:0")
+        torch.backends.cudnn.benchmark = True
+    else:
+        device = torch.device("cpu")
 
     trainset = torch.from_numpy(torchvision.datasets.CIFAR10(root=ROOT, train=True, download=True).data)
     testset = torch.from_numpy(torchvision.datasets.CIFAR10(root=ROOT, train=False, download=True).data)
