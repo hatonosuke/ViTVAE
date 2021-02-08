@@ -38,12 +38,10 @@ def losses_append(total_losses, losses, length):
 
 @torch.no_grad()
 def visualize(model, data, device, nrow=8):
-    print(data.size())
     xs = prepare(data, device)
     _, variables = model(xs)
 
     rx = variables['rx'].loc # N, C, H, W
-    print(rx.size())
 
     def _tile(rx):
         N, C, H, W = rx.size()
