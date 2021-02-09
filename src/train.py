@@ -83,7 +83,7 @@ def train(num_epochs=100, batch_size=32, dataset_size=None):
         total_losses = defaultdict(float)
         idxes = torch.randperm(len(trainset))
 
-        for i in range(len(idxes)):
+        for i in range(0, len(idxes), batch_size):
             idx = idxes[i:i+batch_size]
 
             xs = prepare(trainset[idx], device)
@@ -103,7 +103,7 @@ def train(num_epochs=100, batch_size=32, dataset_size=None):
         with torch.no_grad():
             total_losses = defaultdict(float)
             idxes = torch.randperm(len(testset))
-            for i in range(len(idxes)):
+            for i in range(0, len(idxes), batch_size):
                 idx = idxes[i:i+batch_size]
                 xs = prepare(testset[idx], device)
 
