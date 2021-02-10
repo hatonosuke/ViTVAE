@@ -9,9 +9,10 @@ class Residual(nn.Module):
     def __init__(self, fn):
         super().__init__()
         self.fn = fn
+        self.alpha = nn.Parameter(torch.zeros([]))
 
     def forward(self, x, **kwargs):
-        return self.fn(x, **kwargs) + x
+        return x + self.alpha * self.fn(x, **kwargs)
 
 
 class FeedForward(nn.Module):
@@ -66,7 +67,7 @@ class ViTEncoder(nn.Module):
         self.patch_dim = channels * patch_size**2
         self.dim = dim
 
-        self.pos_embedding      = nn.Parameter(torch.randn(self.num_patches + 1, 1, dim))
+        self.pos_embedding      = nn.Parameter(torch.zeros(self.num_patches + 1, 1, dim))
         self.patch_to_embedding = nn.Linear(self.patch_dim, dim)
         self.dropout            = nn.Dropout(emb_dropout)
 
@@ -103,7 +104,7 @@ class ViTDecoder(nn.Module):
         self.dim = dim
         self.patch_size = patch_size
 
-        self.pos_embedding = nn.Parameter(torch.randn(self.num_patches + 1, 1, dim))
+        self.pos_embedding = nn.Parameter(torch.zeros(self.num_patches + 1, 1, dim))
         self.patch_to_img  = nn.Linear(dim, self.patch_dim)
         self.dropout       = nn.Dropout(emb_dropout)
 
@@ -137,7 +138,7 @@ class ViTVAE(nn.Module):
         self.encoder = ViTEncoder(image_size, patch_size, num_classes, dim, depth, heads, mlp_dim, channels, dropout, emb_dropout)
         self.decoder = ViTDecoder(image_size, patch_size, num_classes, dim, depth, heads, mlp_dim, channels, dropout, emb_dropout)
 
-    def forward(self, x, alpha=1.0):
+    def forward(self, x, alpha=1./24.):
 
         dist = self.encoder(x)
         z = dist.rsample()

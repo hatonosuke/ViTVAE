@@ -18,8 +18,8 @@ patch_size = 2
 num_hiddens = 128
 dim = 512
 depth = 6
-heads = 8
-mlp_dim = 512
+heads = 2
+mlp_dim = 128
 channels = 3
 dropout = 0.1
 emb_dropout = 0.1
@@ -38,6 +38,7 @@ def losses_append(total_losses, losses, length):
 
 @torch.no_grad()
 def visualize(model, data, device, nrow=8):
+    model.eval()
     xs = prepare(data, device)
     _, variables = model(xs)
 
@@ -54,8 +55,8 @@ def visualize(model, data, device, nrow=8):
         rx = rx.view(N//nrow, nrow, C, H, W).permute(0, 3, 1, 4, 2).reshape(N//nrow*H, nrow*W, C)
         return rx.numpy()
 
-    rx = _tile(rx)
     xs = _tile(xs)
+    rx = _tile(rx)
 
     return xs, rx
 
@@ -76,10 +77,11 @@ def train(num_epochs=100, batch_size=32, dataset_size=None):
 
     model = ViTVAE(image_size, patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout=dropout, emb_dropout=emb_dropout).to(device)
 
-    optimizer = AdaBelief(model.parameters(), 1e-3)
+    optimizer = AdaBelief(model.parameters(), 1e-2)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, num_epochs)
 
     for epoch in range(1, num_epochs+1):
+        model.train()
         total_losses = defaultdict(float)
         idxes = torch.randperm(len(trainset))
 
@@ -96,11 +98,12 @@ def train(num_epochs=100, batch_size=32, dataset_size=None):
             losses_append(total_losses, losses, len(idx))
 
         total_losses = {key: value / len(idxes) for key, value in total_losses.items()}
-
         logger.info("epoch %s, %s", epoch, ", ".join(["{} = {}".format(key, value) for key, value in total_losses.items()]))
+        scheduler.step()
 
         # validation
         with torch.no_grad():
+            model.eval()
             total_losses = defaultdict(float)
             idxes = torch.randperm(len(testset))
             for i in range(0, len(idxes), batch_size):
@@ -118,10 +121,10 @@ def train(num_epochs=100, batch_size=32, dataset_size=None):
     xs_train, rx_train = visualize(model, trainset[0:8*8], device)
     xs_test, rx_test  = visualize(model, testset[0:8*8], device)
 
-    plt.imshow(rx_train)
-    plt.imshow(xs_train)
-    plt.imshow(rx_test)
-    plt.imshow(xs_test)
+    plt.imsave("rx_train.png", rx_train)
+    plt.imsave("xs_train.png", xs_train)
+    plt.imsave("rx_test.png", rx_test)
+    plt.imsave("xs_test.png", xs_test)
 
 if __name__ == '__main__':
     train(10, 2, 10)
