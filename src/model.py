@@ -2,7 +2,7 @@ import math
 import torch
 import torch.nn.functional as F
 from torch import nn
-import torch.distributed
+from distributions import DiscretizedLogistic
 
 class Residual(nn.Module):
 
@@ -105,7 +105,7 @@ class ViTDecoder(nn.Module):
         self.patch_size = patch_size
 
         self.pos_embedding = nn.Parameter(torch.zeros(self.num_patches + 1, 1, dim))
-        self.patch_to_img  = nn.Linear(dim, self.patch_dim)
+        self.patch_to_img  = nn.Linear(dim, self.patch_dim*2)
         self.dropout       = nn.Dropout(emb_dropout)
 
         self.transformer = Transformer(dim, depth, heads, mlp_dim, dropout)
@@ -126,8 +126,9 @@ class ViTDecoder(nn.Module):
         L = int(math.sqrt(SEQ))
         x = x.view(L, L, N, p, p, CH//p//p)
         x = x.permute(2, 5, 0, 3, 1, 4).reshape(N, CH//p//p, L*p, L*p)
+        loc, scale = torch.chunk(x, 2, dim=1)
 
-        return torch.distributions.Normal(x, 1.0)
+        return DiscretizedLogistic(loc, F.softplus(scale) + 1e-6)
 
 
 class ViTVAE(nn.Module):
