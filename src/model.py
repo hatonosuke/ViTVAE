@@ -20,6 +20,7 @@ class FeedForward(nn.Module):
     def __init__(self, dim, hidden_dim, dropout=0.0):
         super().__init__()
         self.net = nn.Sequential(
+            nn.LayerNorm(dim), 
             nn.Linear(dim, hidden_dim),
             nn.GELU(),
             nn.Dropout(dropout),
@@ -49,7 +50,7 @@ class Transformer(nn.Module):
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
                 Residual(nn.Sequential(nn.LayerNorm(dim), SelfAttention(dim, heads, dropout))),
-                Residual(nn.Sequential(nn.LayerNorm(dim), FeedForward(dim, mlp_dim, dropout)))
+                Residual(FeedForward(dim, mlp_dim, dropout))
             ]))
 
     def forward(self, x):
@@ -68,7 +69,7 @@ class ViTEncoder(nn.Module):
         self.dim = dim
 
         self.pos_embedding      = nn.Parameter(torch.zeros(self.num_patches + 1, 1, dim))
-        self.patch_to_embedding = nn.Linear(self.patch_dim, dim)
+        self.patch_to_embedding = nn.Sequential(nn.Linear(self.patch_dim, dim), nn.LayerNorm(dim))
         self.dropout            = nn.Dropout(emb_dropout)
 
         self.transformer = Transformer(dim, depth, heads, mlp_dim, dropout)
@@ -85,7 +86,7 @@ class ViTEncoder(nn.Module):
         x = self.patch_to_embedding(x)
 
         x = torch.cat([x, x.new_zeros(1, N, self.dim)], dim=0)
-        x = self.dropout(x + self.pos_embedding)
+        x = self.dropout(x + self.pos_embedding * math.sqrt(self.dim))
 
         x = self.transformer(x)
 
@@ -104,24 +105,24 @@ class ViTDecoder(nn.Module):
         self.dim = dim
         self.patch_size = patch_size
 
-        self.pos_embedding = nn.Parameter(torch.zeros(self.num_patches + 1, 1, dim))
+        self.pos_embedding = nn.Parameter(torch.zeros(self.num_patches, 1, dim))
         self.patch_to_img  = nn.Linear(dim, self.patch_dim*2)
         self.dropout       = nn.Dropout(emb_dropout)
 
         self.transformer = Transformer(dim, depth, heads, mlp_dim, dropout)
-        self.mlp_head = nn.Linear(num_hiddens, dim, bias=False) # pos_embedding instead of bias
+        self.mlp_head = nn.Sequential(nn.Linear(num_hiddens, dim, bias=False), nn.LayerNorm(dim))
 
     def forward(self, z):
         N, H = z.size()
         p = self.patch_size
 
         x = self.mlp_head(z).unsqueeze(0) # (1, N, dim)
-        x = torch.cat([x.new_zeros([self.num_patches, N, self.dim]), x], dim=0)
-        x = self.dropout(x + self.pos_embedding)
+        # broadcast x
+        x = self.dropout(x + self.pos_embedding * math.sqrt(self.dim))
 
         x = self.transformer(x)
 
-        x = self.patch_to_img(x[:-1]) # (H//p)*(W//p), N, p*p*CH
+        x = self.patch_to_img(x) # (H//p)*(W//p), N, p*p*CH
         SEQ, N, CH = x.size()
         L = int(math.sqrt(SEQ))
         x = x.view(L, L, N, p, p, CH//p//p)
