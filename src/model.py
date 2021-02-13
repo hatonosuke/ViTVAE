@@ -4,6 +4,10 @@ import torch.nn.functional as F
 from torch import nn
 from distributions import DiscretizedLogistic
 
+# for Cifar10
+IMAGE_SIZE     = 32
+IMAGE_CHANNELS = 3
+
 class Residual(nn.Module):
 
     def __init__(self, fn):
@@ -60,12 +64,12 @@ class Transformer(nn.Module):
         return x
 
 class ViTEncoder(nn.Module):
-    def __init__(self, image_size, patch_size, num_hiddens, dim, depth, heads, mlp_dim, channels=3, dropout=0, emb_dropout=0):
+    def __init__(self, patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout=0, emb_dropout=0):
         super().__init__()
-        assert image_size % patch_size == 0
-        self.num_patches = (image_size // patch_size) ** 2
+        assert IMAGE_SIZE % patch_size == 0
+        self.num_patches = (IMAGE_SIZE // patch_size) ** 2
         self.patch_size = patch_size
-        self.patch_dim = channels * patch_size**2
+        self.patch_dim = IMAGE_CHANNELS * patch_size**2
         self.dim = dim
 
         self.pos_embedding      = nn.Parameter(torch.zeros(self.num_patches + 1, 1, dim))
@@ -97,11 +101,11 @@ class ViTEncoder(nn.Module):
         return torch.distributions.Normal(loc, scale)
 
 class ViTDecoder(nn.Module):
-    def __init__(self, image_size, patch_size, num_hiddens, dim, depth, heads, mlp_dim, channels=3, dropout=0, emb_dropout=0):
+    def __init__(self, patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout=0, emb_dropout=0):
         super().__init__()
-        assert image_size % patch_size == 0
-        self.num_patches = (image_size // patch_size) ** 2
-        self.patch_dim = channels * patch_size ** 2
+        assert IMAGE_SIZE % patch_size == 0
+        self.num_patches = (IMAGE_SIZE // patch_size) ** 2
+        self.patch_dim = IMAGE_CHANNELS * patch_size ** 2
         self.dim = dim
         self.patch_size = patch_size
 
@@ -134,11 +138,11 @@ class ViTDecoder(nn.Module):
 
 class ViTVAE(nn.Module):
 
-    def __init__(self, image_size, patch_size, num_classes, dim, depth, heads, mlp_dim, channels=3, dropout=0, emb_dropout=0):
+    def __init__(self, patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout=0, emb_dropout=0):
         super().__init__()
 
-        self.encoder = ViTEncoder(image_size, patch_size, num_classes, dim, depth, heads, mlp_dim, channels, dropout, emb_dropout)
-        self.decoder = ViTDecoder(image_size, patch_size, num_classes, dim, depth, heads, mlp_dim, channels, dropout, emb_dropout)
+        self.encoder = ViTEncoder(patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout, emb_dropout)
+        self.decoder = ViTDecoder(patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout, emb_dropout)
 
     def forward(self, x, alpha=1./24.):
 

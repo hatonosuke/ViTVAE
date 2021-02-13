@@ -13,14 +13,12 @@ logger = getLogger(__name__)
 
 ROOT='./data'
 
-image_size = 32
 patch_size = 2
 num_hiddens = 128
 dim = 512
 depth = 6
 heads = 2
 mlp_dim = 128
-channels = 3
 dropout = 0.1
 emb_dropout = 0.1
 
@@ -75,7 +73,7 @@ def train(num_epochs=100, batch_size=32, dataset_size=None):
         trainset = trainset[:dataset_size]
         testset  = testset[:dataset_size]
 
-    model = ViTVAE(image_size, patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout=dropout, emb_dropout=emb_dropout).to(device)
+    model = ViTVAE(patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout=dropout, emb_dropout=emb_dropout).to(device)
 
     optimizer = AdaBelief(model.parameters(), 1e-2)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, num_epochs)
