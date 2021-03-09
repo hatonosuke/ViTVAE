@@ -135,14 +135,7 @@ class ViTDecoder(nn.Module):
 
         return DiscretizedLogistic(loc, F.softplus(scale) + 1e-6)
 
-
-class ViTVAE(nn.Module):
-
-    def __init__(self, patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout=0, emb_dropout=0):
-        super().__init__()
-
-        self.encoder = ViTEncoder(patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout, emb_dropout)
-        self.decoder = ViTDecoder(patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout, emb_dropout)
+class VAEBase(nn.Module):
 
     def forward(self, x, alpha=1./24.):
 
@@ -166,3 +159,112 @@ class ViTVAE(nn.Module):
         variables["dist"]                     = dist
 
         return losses, variables
+
+
+class ViTVAE(VAEBase):
+
+    def __init__(self, patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout=0, emb_dropout=0):
+        super().__init__()
+
+        self.encoder = ViTEncoder(patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout, emb_dropout)
+        self.decoder = ViTDecoder(patch_size, num_hiddens, dim, depth, heads, mlp_dim, dropout, emb_dropout)
+
+
+def group_norm16(dim):
+    return nn.GroupNorm(dim//16, dim)
+
+class Block(nn.Module):
+
+    def __init__(self, in_channels, out_channels, stride=1):
+        super().__init__()
+
+        if stride == 1:
+            assert in_channels == out_channels
+            self.skip = nn.Identity()
+        else:
+            self.skip = nn.Sequential(nn.AvgPool2d(stride, stride), nn.Conv2d(in_channels, out_channels, 1, bias=False), group_norm16(out_channels))
+        self.branch = nn.Sequential(
+            group_norm16(in_channels), nn.ReLU(), nn.Conv2d(in_channels, out_channels, 3, padding=1, stride=stride, bias=False),
+            group_norm16(out_channels), nn.ReLU(), nn.Conv2d(out_channels, out_channels, 3, padding=1)
+        )
+        self.alpha = nn.Parameter(torch.zeros([]))
+
+    def forward(self, x):
+        return self.skip(x) + self.alpha * self.branch(x)
+
+
+class ConvEncoder(nn.Module):
+
+    def __init__(self, num_hiddens, base_dim):
+        super().__init__()
+
+        self.features = nn.Sequential(
+            nn.Conv2d(IMAGE_CHANNELS, base_dim, 3, padding=1, bias=False), nn.GroupNorm(base_dim//16, base_dim), # 32x32
+            Block(base_dim,   base_dim), # 32x32
+            Block(base_dim,   base_dim*2, stride=2), # 16x16
+            Block(base_dim*2, base_dim*4, stride=2), #  8x8
+            Block(base_dim*4, base_dim*8, stride=2), #  4x4
+        )
+        self.head = nn.Sequential(group_norm16(base_dim*8*4*4), nn.Linear(base_dim*8*4*4, num_hiddens*2))
+
+    def forward(self, x):
+        features = self.features(x)
+        N, C, H, W = features.size()
+        y = self.head(features.view(N, -1))
+
+        loc, scale = torch.chunk(y, 2, dim=1)
+
+        return torch.distributions.Normal(loc, F.softplus(scale) + 1e-6)
+
+
+class DecBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.block = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels*2*2, 3, padding=1, bias=False), 
+                nn.PixelShuffle(2), group_norm16(out_channels), nn.ReLU(), 
+                nn.Conv2d(out_channels, out_channels, 3, padding=1, bias=False),
+                group_norm16(out_channels), nn.ReLU()
+            )
+        self.last_conv = nn.Conv2d(out_channels, IMAGE_CHANNELS*2, 1)
+
+    def forward(self, x):
+        y = self.block(x)
+        img = F.interpolate(self.last_conv(y), size=(IMAGE_SIZE, IMAGE_SIZE), mode='nearest')
+
+        return y, img
+
+
+class ConvDecoder(nn.Module):
+
+    def __init__(self, num_hiddens, base_dim):
+        super().__init__()
+        self.base_dim = base_dim
+
+        self.head   = nn.Sequential(nn.Linear(num_hiddens, base_dim*8*4*4), group_norm16(base_dim*8*4*4))
+        self.b8x8   = DecBlock(base_dim*8, base_dim*4)
+        self.b16x16 = DecBlock(base_dim*4, base_dim*2)
+        self.b32x32 = DecBlock(base_dim*2, base_dim)
+
+
+    def forward(self, z):
+
+        x = self.head(z).view(-1, 8*self.base_dim, 4, 4)
+        x, i8x8   = self.b8x8(x)
+        x, i16x16 = self.b16x16(x)
+        x, i32x32 = self.b32x32(x)
+        img = i8x8 + i16x16 + i32x32
+
+        loc, scale = torch.chunk(img, 2, dim=1)
+
+        return DiscretizedLogistic(loc, F.softplus(scale) + 1e-6)
+
+
+class ConvVAE(VAEBase):
+
+    def __init__(self, num_hiddens, base_dim):
+        super().__init__()
+
+        self.encoder = ConvEncoder(num_hiddens, base_dim)
+        self.decoder = ConvDecoder(num_hiddens, base_dim)
+
